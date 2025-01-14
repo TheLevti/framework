@@ -104,15 +104,7 @@ abstract class Queue
             $job = CallQueuedClosure::create($job);
         }
 
-        $payload = json_encode($value = $this->createPayloadArray($job, $queue, $data), \JSON_UNESCAPED_UNICODE);
-
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            throw new InvalidPayloadException(
-                'Unable to JSON encode payload. Error ('.json_last_error().'): '.json_last_error_msg(), $value
-            );
-        }
-
-        return $payload;
+        return $this->serializePayload($this->createPayloadArray($job, $queue, $data));
     }
 
     /**
@@ -156,8 +148,8 @@ abstract class Queue
         ]);
 
         $command = $this->jobShouldBeEncrypted($job) && $this->container->bound(Encrypter::class)
-                    ? $this->container[Encrypter::class]->encrypt(serialize(clone $job))
-                    : serialize(clone $job);
+                    ? $this->container[Encrypter::class]->encrypt(clone $job)
+                    : $this->serializeCommand(clone $job);
 
         return array_merge($payload, [
             'data' => array_merge($payload['data'], [
@@ -438,5 +430,65 @@ abstract class Queue
     public function setContainer(Container $container)
     {
         $this->container = $container;
+    }
+
+    /**
+     * Serialize the command that is embedded in the payload.
+     *
+     * @param  object  $object
+     * @return mixed
+     */
+    public function serializeCommand($object)
+    {
+        return serialize($object);
+    }
+
+    /**
+     * Unserialize the command.
+     *
+     * @param  mixed  $object
+     * @return object
+     */
+    public function unserializeCommand($object)
+    {
+        return unserialize($object);
+    }
+
+    /**
+     * Serialize the payload to be used as the queue message.
+     *
+     * @param  array  $payload
+     * @return mixed
+     */
+    public function serializePayload($payload)
+    {
+        $serialized = json_encode($payload);
+
+        if (JSON_ERROR_NONE !== json_last_error()) {
+            throw new InvalidPayloadException(
+                'Unable to JSON encode payload. Error code: '.json_last_error()
+            );
+        }
+
+        return $serialized;
+    }
+
+    /**
+     * Unserialize the payload.
+     *
+     * @param  mixed  $payload
+     * @return array
+     */
+    public function unserializePayload($payload)
+    {
+        $unserialized = json_decode($payload, true);
+
+        if (JSON_ERROR_NONE !== json_last_error()) {
+            throw new InvalidPayloadException(
+                'Unable to JSON decode payload. Error code: '.json_last_error()
+            );
+        }
+
+        return $unserialized;
     }
 }

@@ -6,6 +6,7 @@ use Illuminate\Contracts\Queue\ClearableQueue;
 use Illuminate\Contracts\Queue\Queue as QueueContract;
 use Illuminate\Contracts\Redis\Factory as Redis;
 use Illuminate\Queue\Jobs\RedisJob;
+use Illuminate\Redis\Connections\PhpRedisConnection;
 use Illuminate\Support\Str;
 
 class RedisQueue extends Queue implements QueueContract, ClearableQueue
@@ -202,11 +203,14 @@ class RedisQueue extends Queue implements QueueContract, ClearableQueue
      */
     protected function laterRaw($delay, $payload, $queue = null)
     {
+        /* Proivde an empty array to zadd in the end to avoid our possibly not
+         * serialized array payload to be intepreted as a multi zadd call.
+         */
         $this->getConnection()->zadd(
-            $this->getQueue($queue).':delayed', $this->availableAt($delay), $payload
+            $this->getQueue($queue).':delayed', $this->availableAt($delay), $payload, []
         );
 
-        return json_decode($payload, true)['id'] ?? null;
+        return $this->unserializePayload($payload)['id'] ?? null;
     }
 
     /**
@@ -397,5 +401,77 @@ class RedisQueue extends Queue implements QueueContract, ClearableQueue
     public function getRedis()
     {
         return $this->redis;
+    }
+
+    /**
+     * Serialize the command that is embedded in the payload. For phpredis with
+     * serialization enabled, the payload will be serialized by the extension.
+     *
+     * @param  object  $object
+     * @return mixed
+     */
+    public function serializeCommand($object)
+    {
+        $connection = $this->getConnection();
+
+        if ($connection instanceof PhpRedisConnection && $connection->serialized()) {
+            return $object;
+        }
+
+        return parent::serializeCommand($object);
+    }
+
+    /**
+     * Unserialize the command. For phpredis with serialization enabled, the
+     * command is already unserialized by the extension.
+     *
+     * @param  mixed  $object
+     * @return object
+     */
+    public function unserializeCommand($object)
+    {
+        $connection = $this->getConnection();
+
+        if ($connection instanceof PhpRedisConnection && $connection->serialized()) {
+            return $object;
+        }
+
+        return parent::unserializeCommand($object);
+    }
+
+    /**
+     * Serialize the payload to be used as the queue message. For phpredis with
+     * serialization enabled, the payload will be serialized by the extension.
+     *
+     * @param  array  $payload
+     * @return mixed
+     */
+    public function serializePayload($payload)
+    {
+        $connection = $this->getConnection();
+
+        if ($connection instanceof PhpRedisConnection && $connection->serialized()) {
+            return $payload;
+        }
+
+        return parent::serializePayload($payload);
+    }
+
+    /**
+     * Unserialize the payload. For phpredis with serialization enabled, the
+     * payload is already unserialized by the extension.
+     *
+     * @param  mixed  $payload
+     * @return array
+     */
+    public function unserializePayload($payload)
+    {
+        $connection = $this->getConnection();
+
+        if ($connection instanceof PhpRedisConnection && $connection->serialized()) {
+            return $payload;
+        }
+
+        return parent::unserializePayload($payload);
     }
 }
